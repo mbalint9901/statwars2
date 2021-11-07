@@ -1,0 +1,229 @@
+---
+title: "Elemzes"
+author: "Balint Mazzag"
+date: '2021 11 03 '
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+library(tidyverse)
+```
+
+
+2. Hasonlítsák össze az oktatók (4-es csoport) és az ügyintézők (5 és 6-os csoport együtt) keresetek szerinti eloszlását a lehető legteljesebben!
+
+
+Az eredményeket foglalják össze, ahol annak helye van érzékeltessék ábrákkal! Igyekezzenek tömören, lényegretörően végezni a számításokat!
+Kérjük, egy word vagy pdf fájlban legyenek az eredmények, elemzések! Excelt, vagy más szoftvert természetesen használhatnak, de azok outputja ha feltétlenül kell, függelékként lehet az elemzésükben. 
+
+
+```{r}
+teacher_df <- readxl::read_excel("3. forduló STAT WARS UNI.xlsx", sheet = 2) %>% 
+  mutate(
+    nem = case_when(
+      nem == 1 ~ "Férfi",
+      nem == 2 ~ "Nő"
+    ),
+    eletkor = as.integer(eletkor),
+    iskvegz = factor(iskvegz, levels = 1:3, ordered = TRUE),
+    iskvegz = fct_relabel(iskvegz, function(l) {
+      case_when(
+      l == 1 ~ "Legfeljebb érettségi",
+      l == 2 ~ "Főiskola/Bsc",
+      l == 3 ~ "Egyetem/Msc"
+    )}),
+    munkakor = factor(munkakor, levels = 7:1, ordered = TRUE),
+    munkakor = fct_relabel(munkakor, function(l) {
+    case_when(
+      l == 1 ~ "Legfelsőbb vezető",
+      l == 2 ~ "Tanszék/intézetvezető",
+      l == 3 ~ "Egyéb (gazdasági, jogi, műszaki, stb.)",
+      l == 4 ~ "Egyetemi/főiskolai oktató/tanár",
+      l == 5 ~ "Magasan képzett ügyintéző",
+      l == 6 ~ "Ügyintéző/titkárnő",
+      l == 7 ~ "Betanított/segédmunkát végző"
+    )})
+  )
+
+```
+
+1. Az egyetemi főiskolai  oktatók/tanárok fizetése életkori csoportonként hogyan különbözik egymástól? Hasonlítsák össze valamilyen benchmark adattal, ezen az egyetemen mennyivel keresnek jobban/rosszabbul az egyetemi/főiskolai oktatók/tanárokéletkori csoportonkénti bontásban, mint az országos átlag?
+
+```{r}
+teacher_df <- teacher_df %>% 
+  mutate(
+    eletkor_group = cut(eletkor, breaks = c((1:7)*10, Inf), right = FALSE, 
+                        labels = FALSE),
+    eletkor_group = factor(eletkor_group, levels = 1:6, ordered = TRUE),
+    eletkor_group = fct_relabel(eletkor_group, function(l) {
+      case_when(
+        l == 1 ~ "-19",
+        l == 7 ~ "70-",
+        TRUE ~ str_c(as.numeric(l)*10, "-", as.numeric(l) * 10 + 9)
+      )
+    })
+  )
+```
+
+```{r}
+teacher_df %>% 
+  filter(munkakor == "Egyetemi/főiskolai oktató/tanár") %>% 
+  select(-eletkor, -munkakor) %>% 
+  GGally::ggpairs(aes(color = eletkor_group))
+```
+
+```{r}
+total_summarise <- function(x, g, ...) {
+  bind_rows(
+    x %>% 
+      group_by({{ g }}) %>% 
+      summarise(...) %>% 
+      ungroup(),
+    x %>% 
+      summarise(...) %>% 
+      mutate(g = "Összesen") %>% 
+    select(g, everything()) %>% 
+    rename("{{ g }}" := 1)
+  )
+}
+```
+
+```{r}
+total_summarise(teacher_df, eletkor_group, 
+                mean = mean(kereset),
+                median = median(kereset),
+                sd = sd(kereset),
+                alpha3 = moments::skewness(kereset),
+                kurtosis = moments::kurtosis(kereset),
+                n = n()
+                )
+```
+
+```{r}
+teacher_df %>% 
+  group_by(eletkor_group, nem) %>% 
+  summarise(m = mean(kereset), s = sd(kereset), n = n()) %>% 
+  mutate(
+    cl = m - s/(n^.5),
+    ch = m + s/(n^.5)
+  ) %>% 
+  ggplot() +
+  aes(m, eletkor_group) +
+  geom_linerange(aes(xmin = cl, xmax = ch, color = nem), size = 2, alpha = .5) +
+  geom_point(aes(fill = nem), shape = 21, size = 3)
+```
+
+
+
+```{r}
+
+GGally::ggpairs(teacher_df, ggplot2::aes(colour=iskvegz))
+```
+
+Életkor alapján való eloszlása a tanári fizetéseknek
+
+```{r elsofeladat}
+#TODO KERESNI ORSZÁGOS ÁTLAGOS (ÉS MEDIÁN) EGYETEMI TANÁRI JÖVEDELMET
+
+data_1 <- data %>% 
+  mutate(eletkor = cut(eletkor, breaks = c("0", "20", "30", "40", "50", "60", "70", Inf), labels = c("0-20", "20-30", "30-40", "40-50", "50-60", "60-70", "70+"))) %>% 
+  filter(munkakor == 4)  #szűrés tanárokra
+
+
+data_1 %>% ggplot(aes(x = eletkor, y = kereset, group = nem, fill =nem)) +
+  geom_bar(stat = "identity", position = position_dodge())
+
+```
+
+
+Oktatük és ügyintézők kereseti eloszlása
+```{r elsofeladat}
+
+teacher_df %>% 
+  filter(
+    munkakor %in% c("Ügyintéző/titkárnő", "Magasan képzett ügyintéző", "Egyetemi/főiskolai oktató/tanár")
+  ) %>% 
+  mutate(munkakor_group = ifelse(
+    munkakor == "Egyetemi/főiskolai oktató/tanár", "Oktató", "ügyintéző"
+  )) %>% 
+  group_by(munkakor_group) %>% 
+  mutate(iskvegz_ratio = round(sum(iskvegz == "Egyetem/Msc")/n(), 2),
+         iskvegz_ratio = scales::percent(iskvegz_ratio),
+         mean = mean(kereset)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = kereset, group = munkakor_group, color = munkakor_group,
+             fill = munkakor_group, alpha = iskvegz_ratio)) +
+  geom_density() +
+  geom_vline(aes(xintercept = mean, color = munkakor_group), linetype = "dashed", size = 0.9) +
+  facet_wrap(~nem)+
+  labs(alpha = "Mesterfokú diplomával rendelkezők aránya")
+```
+
+
+```{r}
+teacher_df %>% 
+  filter(
+    munkakor %in% c("Ügyintéző/titkárnő", "Magasan képzett ügyintéző", "Egyetemi/főiskolai oktató/tanár")
+  ) %>% 
+  mutate(munkakor_group = ifelse(
+    munkakor == "Egyetemi/főiskolai oktató/tanár", "Oktató", "ügyintéző"
+  )) %>% 
+  GGally::ggpairs(aes(color = munkakor_group))
+```
+
+
+
+3. Készítsenek elemzést arról, hogy nem (férfi-nő) szerint a havi átlagos bruttó keresetekben mekkora az átlagos különbség összességében és az egyéb ismérvek hatását kiszűrve, illetve azokkal összekapcsolódva! Használjanak az elemzéshez kétféle módszertant/modellt és hasonlítsák össze a kétféle módszerrel kapott eredmény(eke)t! Írjanak egy összefoglalást is az elemzések tapasztalatairól!
+
+p-score, ols, fa, ..
+
+```{r}
+teacher_df %>% 
+  group_by(nem) %>% 
+  summarise(mean(kereset)) # TODO
+```
+
+
+```{r}
+teacher_df %>% 
+  lm(formula = kereset ~ .-eletkor_group) %>% 
+  GGally::ggcoef_model()
+```
+
+
+```{r}
+teacher_df %>% 
+  select(- eletkor_group) %>% 
+  mutate(nem = nem == "Férfi") %>% 
+  glm(formula = nem ~ eletkor + iskvegz + munkakor, family = "binomial") %>% 
+  predict( type = "response") %>% 
+  cbind(teacher_df) %>% 
+  rename(z = 1) %>% 
+  tibble() %>% 
+  mutate(id = row_number())
+```
+
+```{r}
+teacher_df %>% 
+  group_by(nem, iskvegz, munkakor, eletkor_group) %>% 
+  summarise(kereset = mean(kereset), n = n()) %>% 
+  pivot_wider(names_from = nem, values_from = c(kereset, n)) %>% 
+  mutate(
+    d = kereset_Férfi - kereset_Nő,
+    n = n_Férfi + n_Nő
+  ) %>% 
+  ungroup() %>% 
+  summarise(ate = weighted.mean(d, n, na.rm = T),
+            atet = weighted.mean(d, n_Férfi, na.rm = TRUE),
+            atet_no = weighted.mean(d, n_Nő, na.rm = TRUE))
+```
+
+```{r}
+teacher_df %>% 
+  select(- eletkor_group) %>% 
+  rpart::rpart(formula = kereset ~ ., cp = .001) %>% 
+  rpart.plot::rpart.plot()
+```
+
