@@ -2,10 +2,12 @@
 title: "Elemzes"
 author: "Balint Mazzag"
 date: '2021 11 03 '
-output: html_document
-editor_options: 
-  chunk_output_type: console
+output: github_document
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, dev = "cairo_pdf")
+```
 
 ```{r}
 library(tidyverse)
@@ -124,22 +126,10 @@ GGally::ggpairs(teacher_df, ggplot2::aes(colour=iskvegz))
 
 Életkor alapján való eloszlása a tanári fizetéseknek
 
-```{r elsofeladat}
-#TODO KERESNI ORSZÁGOS ÁTLAGOS (ÉS MEDIÁN) EGYETEMI TANÁRI JÖVEDELMET
-
-data_1 <- data %>% 
-  mutate(eletkor = cut(eletkor, breaks = c("0", "20", "30", "40", "50", "60", "70", Inf), labels = c("0-20", "20-30", "30-40", "40-50", "50-60", "60-70", "70+"))) %>% 
-  filter(munkakor == 4)  #szűrés tanárokra
-
-
-data_1 %>% ggplot(aes(x = eletkor, y = kereset, group = nem, fill =nem)) +
-  geom_bar(stat = "identity", position = position_dodge())
-
-```
 
 
 Oktatük és ügyintézők kereseti eloszlása
-```{r elsofeladat}
+```{r}
 
 teacher_df %>% 
   filter(
@@ -225,5 +215,12 @@ teacher_df %>%
   select(- eletkor_group) %>% 
   rpart::rpart(formula = kereset ~ ., cp = .001) %>% 
   rpart.plot::rpart.plot()
+```
+
+\pagebreak
+
+# Függelék: R kódok
+
+```{r ref.label=setdiff(knitr::all_labels(), c("setup")), eval=FALSE, echo=T, attr.source='.numberLines'}
 ```
 
