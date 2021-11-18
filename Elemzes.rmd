@@ -5,7 +5,7 @@ date: \today
 output: 
   pdf_document: 
     fig_caption: yes
-    toc: yes
+    toc: no
     toc_depth: 4
 header-includes:
 - \usepackage{fancyhdr}
@@ -19,16 +19,17 @@ header-includes:
 - \usepackage{pdfpages}
 ---
 
-\pagebreak
-
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, dev = "cairo_pdf")
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, dev = "cairo_pdf")
 ```
 
 ```{r}
 # setup ---------------------------------------------------------------------------------
 
 library(tidyverse)
+library(GGally)
+options(scipen = 999)
+
 ```
 
 ```{r}
@@ -60,6 +61,25 @@ teacher_df <- readxl::read_excel("3. forduló STAT WARS UNI.xlsx", sheet = 2) %>
         l == 7 ~ "Betanított/segédmunkát végző"
       )})
   )
+
+```
+
+```{r}
+teacher_df <- teacher_df %>% 
+  mutate(
+    eletkor_group = cut(eletkor, breaks = c(c(0, 3, 4, 5)*10, Inf), right = FALSE, 
+                        labels = FALSE),
+    eletkor_group = factor(eletkor_group, levels = 1:4, ordered = TRUE),
+    eletkor_group = fct_relabel(eletkor_group, function(l) {
+      case_when(
+        l == 1 ~ "30 év alatt",
+        l == 2 ~ "30–39 éves",
+        l == 3 ~ "40–49 éves",
+        l == 4 ~ "50 év és afelett"
+      )
+    })
+  )
+
 ```
 
 ```{r}
@@ -79,15 +99,23 @@ total_summarise <- function(x, g, ...) {
       rename("{{ g }}" := 1)
   )
 }
+
 ```
 
 
-# 1. feladat 
+# 1. Feladat 
 
-Az egyetemi főiskolai  oktatók/tanárok fizetése életkori csoportonként hogyan különbözik egymástól? Hasonlítsák össze valamilyen benchmark adattal, ezen az egyetemen mennyivel keresnek jobban/rosszabbul az egyetemi/főiskolai oktatók/tanárokéletkori csoportonkénti bontásban, mint az országos átlag?
+A korosztályok felbontásakor figyelembe vettük a KSH módszertanát, így 4 korcsoportot alkottunk a megfigyelésekből, a 30 év alatti, 30-39 év közötti, 40-49 év közötti, és 50 év felettiek csoportját. Ez alapján elmondhatjuk, hogy a kereset átlagos értéke a legalacsonyabb a 30 év alatti korosztálynál, míg korcsoportonként fokozatosan növekszik. Azonban fontos kiemelni, hogy a fizetések mediánértéke a korosztályokon belül a 30-39 évesek között a legmagasabb, így a másik két korosztálynál a kiugró értékek jobbra ferde eloszlást implikálnak. Láthatjuk, hogy a legtöbb kiugró értéket az 50 év felettieknél találjuk (közülük is a férfiaknál), ahol akár 1 milliós bruttó fizetéssel is rendelkező oktatókat találhatunk, így a relatív szórás értéke ebben a csoportban a 60%-ot is meghaladta, míg a többiben nem érte el az 50%-ot.
 
-- [x] ábra a ksh összehasonlításról
-- [ ] kereset vs. eletkor boxplot
+```{r fig.height=3, fig.cap="Egyetemi/főiskolai oktatók havi keresetének dobozábrája életkor csoportok szerinti bontásban."}
+teacher_df %>% 
+  filter(munkakor == "Egyetemi/főiskolai oktató/tanár") %>% 
+  ggplot(aes(kereset, eletkor_group, fill = eletkor_group)) + 
+  geom_boxplot(show.legend = FALSE) +
+  scale_x_continuous(labels = ~ str_c(., " ezer Forint")) +
+  labs(x = "Havi kereset", y = "Élekor")
+
+```
 
 ```{r}
 national_avg <- rio::import("https://www.ksh.hu/stadat_files/mun/hu/mun0059.csv") %>% 
@@ -103,79 +131,209 @@ national_avg <- rio::import("https://www.ksh.hu/stadat_files/mun/hu/mun0059.csv"
   mutate_at(-1, as.numeric) %>% 
   pivot_longer(-1, names_to = "eletkor_group") %>% 
   select(-profession)
+
 ```
 
-```{r}
-teacher_df <- teacher_df %>% 
-  mutate(
-    eletkor_group = cut(eletkor, breaks = c(c(0, 3, 4, 5)*10, Inf), right = FALSE, 
-                        labels = FALSE),
-    eletkor_group = factor(eletkor_group, levels = 1:4, ordered = TRUE),
-    eletkor_group = fct_relabel(eletkor_group, function(l) {
-      case_when(
-        l == 1 ~ "30 év alatt",
-        l == 2 ~ "30–39 éves",
-        l == 3 ~ "40–49 éves",
-        l == 4 ~ "50 év és afelett"
-      )
-    })
-  )
-```
+Referenciaértékként a KSH 2020-as 2410-es FEOR ’08 kódja (Egyetemi, főiskolai oktató, tanár) alá tartozó értékeket vizsgáltuk^[https://www.ksh.hu/stadat_files/mun/hu/mun0059.html]. Mivel a nemzeti bruttó átlagbér a teljes munkaidőben dolgozó oktatókra vonatkozik, így ezt az összehasonlítást megtehetjük, mivel a mintában szereplő munkavállalók is főállású alkalmazottak voltak. Összehasonlítva a mintában szereplő életkori csoportokat a KSH módszertanában megadott referenciacsoportokkal azt láthatjuk, hogy az 5%-os szignifikancia szinten vizsgált kétoldalas t-próba alapján a 2020-as országos bruttó átlagfizetések mind az 5 korcsoportban meghaladják az általunk vizsgált egyetem oktatóinak fizetéseit. Az összesen vizsgált bruttó átlagfizetés nagyjából 120 ezer forinttal volt alacsonyabb az intézményben, a legnagyobb különbséget azonban az 50 év feletti korosztályban tapasztalhattuk, nagyjából 150 ezer forintos átlagos eltéréssel.
+
 
 ```{r}
 compare_df <- bind_rows(
-teacher_df %>% 
-  filter(munkakor == "Egyetemi/főiskolai oktató/tanár") %>% 
-  total_summarise(eletkor_group, 
-                  value = mean(kereset)*1e3, 
-                  s = sd(kereset*1e3),
-                  n = n()
-                  ) %>% 
-  mutate(type = "Minta"), # TODO név
-national_avg %>% 
-  mutate(type = "Nemzeti átlag", s = NA, n = NA) # TODO teljes munkaidő hipotézise
+  teacher_df %>% 
+    filter(munkakor == "Egyetemi/főiskolai oktató/tanár") %>% 
+    total_summarise(eletkor_group, 
+                    value = mean(kereset)*1e3, 
+                    s = sd(kereset*1e3),
+                    n = n()
+    ) %>% 
+    mutate(type = "Általunk vizsgált minta átlaga"),
+  national_avg %>% 
+    mutate(type = "Nemzeti átlag", s = NA, n = NA) 
 ) 
+
 ```
 
-```{r}
+```{r fig.height=4, fig.cap="Általunk vizsgált minta és az országos havi átlag keresetek összehasonlítása életkor szerinti bontásban"}
 compare_df %>% 
   mutate(
     lb = value - s/(n^.5),
     ub = value + s/(n^.5),
   ) %>% 
   ggplot() +
-  geom_linerange(aes(xmin = lb, xmax = ub, y = eletkor_group), 
-                 color = "cyan4", size = 2, alpha = .8) +
+  geom_linerange(aes(xmin = lb, xmax = ub, y = eletkor_group, 
+                     color = "Konfidencia intervallum"), size = 2, alpha = .8) +
   geom_point(aes(value, eletkor_group, fill = type), shape = 21, size = 4) +
-  scale_fill_manual(values = c("cyan4", "grey90"))
+  scale_fill_manual(values = c("cyan4", "red4")) +
+  scale_color_manual(values = "cyan4") +
+  scale_x_continuous(labels = ~ format(., big.mark = " ")) +
+  labs(x = "Havi kereset Forintban", y = "Életkor", color = NULL, fill = NULL) +
+  theme(
+    legend.position = "bottom"
+  )
+
 ```
 
-
-```{r}
+```{r eval = FALSE}
 teacher_df %>% 
   filter(munkakor == "Egyetemi/főiskolai oktató/tanár") %>% 
   select(-eletkor, -munkakor) %>% 
   GGally::ggpairs(aes(color = eletkor_group))
 ```
 
-
-
 ```{r}
 total_summarise(teacher_df, eletkor_group, 
-                mean = mean(kereset),
-                median = median(kereset),
-                sd = sd(kereset),
-                alpha3 = moments::skewness(kereset),
-                kurtosis = moments::kurtosis(kereset),
-                n = n()
-)
+                `Átlag` = mean(kereset),
+                `Medián` = median(kereset),
+                `Szórás` = sd(kereset),
+                `Relatív szórás` = sd(kereset) / mean(kereset),
+                `Ferdeség` = moments::skewness(kereset),
+                `Csúcsosság` = moments::kurtosis(kereset),
+                `Elemszám` = n()
+) %>% 
+  mutate_at(-1, ~ format(round(., 2), decimal.mark = ",")) %>% 
+  rename(Életkor = 1) %>% 
+  knitr::kable(caption = "Leíró statiszikák a életkor szerinti bontásban",
+               align = c("l", rep("c", 7)))
 ```
 
-2. Hasonlítsák össze az oktatók (4-es csoport) és az ügyintézők (5 és 6-os csoport együtt) keresetek szerinti eloszlását a lehető legteljesebben!
+# 2. Feladat
 
+Hasonlítsák össze az oktatók (4-es csoport) és az ügyintézők (5 és 6-os csoport együtt) keresetek szerinti eloszlását a lehető legteljesebben!
 
 Az eredményeket foglalják össze, ahol annak helye van érzékeltessék ábrákkal! Igyekezzenek tömören, lényegretörően végezni a számításokat!
 Kérjük, egy word vagy pdf fájlban legyenek az eredmények, elemzések! Excelt, vagy más szoftvert természetesen használhatnak, de azok outputja ha feltétlenül kell, függelékként lehet az elemzésükben. 
+
+- [ ] t-próba
+- [ ] > 1m
+- [ ] ezer HUF
+
+```{r}
+profession_df <- teacher_df %>% 
+  filter(
+    munkakor %in% c("Ügyintéző/titkárnő", "Magasan képzett ügyintéző", 
+                    "Egyetemi/főiskolai oktató/tanár")
+  ) %>% 
+  mutate(munkakor_group = ifelse(
+    munkakor == "Egyetemi/főiskolai oktató/tanár", "Oktató", "Ügyintéző"
+  )) 
+
+```
+
+```{r fig.cap = "Fizetések hisztogramja munkakör jellege szerinti bontásban", fig.heigt = 5}
+profession_df %>% 
+  group_by(munkakor_group) %>%
+  mutate(
+    m = mean(kereset),
+    m = ifelse(!duplicated(m), m, NA)
+  ) %>% 
+  ggplot(aes(kereset, fill = munkakor_group)) +
+  geom_histogram(color = "black", show.legend = FALSE) +
+  geom_hline(yintercept = 0) +
+  geom_vline(aes(xintercept = m, lty = "Átlag érték"), size = 1.5) +
+  facet_wrap(~ munkakor_group, ncol = 1) +
+  scale_linetype_manual(values = 2, name = NULL) +
+  scale_x_continuous(labels = ~ format(.*1e3, big.mark = " ")) +
+  theme(
+    legend.position = "bottom"
+  ) +
+  labs(x = "Havi kereset Forintban", y = "Darab")
+
+```
+
+```{r eval = FALSE}
+t.test(kereset ~ munkakor_group, data = profession_df)
+
+```
+
+A kétmintás t-próba teszt-statisztikájának értéke $3,3504$, ami alapján minden gyakorlatban bevett szignifikancia szinten elvetésre kerül az a nullhipotézis, miszerint a két foglalkoztatási csoportban megegyezne a sokassági átlag.
+
+```{r eval = FALSE}
+profession_df %>% 
+  GGally::ggpairs(aes(color = munkakor_group))
+
+```
+
+```{r}
+profession_df %>% 
+  total_summarise(g = munkakor_group,
+                  `Átlag` = mean(kereset),
+                  `Medián` = median(kereset),
+                  `Szórás` = sd(kereset),
+                  `Relatív szórás` = sd(kereset) / mean(kereset),
+                  `Ferdeség` = moments::skewness(kereset),
+                  `Csúcsosság` = moments::kurtosis(kereset),
+  ) %>% 
+  mutate_at(-1, ~ format(round(., 2), decimal.mark = ",")) %>% 
+  rename(`Munkakör jellege` = 1) %>% 
+  knitr::kable(caption = 
+                 "Fizetések eloszlásának jellemzői munkakör jellege szerinti bontásban",
+               align = c("l", rep("c", )))
+
+```
+
+
+# 3. Feladat
+
+Ahhoz, hogy összehasonlítsuk a két nem közötti keresetbeli különbségeket 3 típusú módszertant használtunk. Azon különbségeknél, amelyekben a magyarázóváltozók teljes hatását szeretnénk vizsgálni, egy- és kétoldalas t-próbát alkalmaztunk a férfi és női bruttó bérek átlagára, valamint OLS regressziót futtattunk a kereset, mint célváltozót magyarázva kizárólag a női nem által alkotott dummy változó bevonásával. Ezzel szemben a közvetlen hatás vizsgálatakor pedig az OLS regressziót kibővítettük a többi magyarázóváltozóval, így minden változó együtthatója a közvetlen hatását mutatja be. Ezen kívül pedig egyszerű párosítással is kiszámoltuk a nem más változók hatásától szűrt hatásának értékét.
+
+```{r eval = FALSE}
+t.test(kereset ~ nem, data = profession_df, alternative = "two.sided")
+
+t.test(kereset ~ nem, data = profession_df, alternative = "greater")
+
+```
+
+A férfi és női fizetések kétmintás statisztikai próbájának elvégzésével választ kapunk arra, hogy van-e szignifikáns (nem véletlen mintavételi ingadozásnak betudható) eltérés.
+
+Kétoldalú alternatív hipotézis mellet a kétmintás t-próba teszt-statisztikájának értéke $2,2425$ (p-érték = $0,0257$), ami alapján 5%-os szignifikanci szinten elutasíthatjuk, hogy a férfi és női fizetések sokassági átlaga megegyezne. Egyoldalú nullhipotézis mellett ($H_0: \text{Férfiak fizetése} \leq \text{Nők fizetése}$), a p-érték $0,0128$, ami mellett 1%-os szignifikancia szinten továbbra sem tudjuk elvetni a nullhipotézist, miszerint a férfiak fizetése szignifikánsan magasabb lenne, mint a nőké.
+
+Az egyszerű statisztikai próba elvégzésén túl azért van szükség további eszközökre, mert a nem számos más a fizetésekről szóló táblázatban megtalálható változóval együtt mozog. A ismérvek megoszlását nemenkénti bontásban a xx.ábra mutatja be.
+
+```{r fig.height=7, fig.cap="A vizsgált adattábla változóinak nemenkénti megoszlása"}
+teacher_df %>% 
+  select(-eletkor_group) %>% 
+  rename(
+    `Életkor` = eletkor,
+    `Végzettség` = iskvegz,
+    `Munkakör` = munkakor,
+    `Kereset` = kereset,
+    `Nem` = nem
+  ) %>% 
+  GGally::ggbivariate(outcome = "Nem",
+                      rowbar_args = list(
+                        label_format = scales::label_percent(decimal.mark = ",", accuracy = .1)
+                      )
+                      
+  )
+
+```
+
+OLS regresszió:
+Megvizsgáltuk, hogy a női munkavállalók kevesebbet keresnek-e, mint a férfiak. Ehhez pedig OLS regressziót futtattunk, amelyben először mindösszesen a női nem dummy változóját szerepeltettük, amellyel a többi magyarázóváltozót hatását nem különítettük el, hanem az együtthatóban a teljes hatás szerepelt. Az ilyen típusú regresszió eredményeként egy 5%-os szinten szignifikáns negatív különbséget figyelhettünk meg, amely alapján a nők bruttó bére átlagosan 64 480 forinttal alacsonyabb, mint a férfiaké. Amennyiben viszont a többi magyarázóváltozó hatását szeretnénk kiszűrni az együtthatóból, minden más változót is bevontunk a modellbe. Ennek eredményeképpen kaptunk egy olyan regressziót, melyben szintén szignifikáns lett a női nem keresetkülönbsége ez a szám 32 ezer forintra tehető, a nem szignifikáns iskolai végzettség változó kivonásával pedig 33 ezer forintra növekedik a különbség.
+
+
+A női keresetkülönbség közvetett hatása így tehát a két együttható különbsége, azaz a szűkített modellt figyelembe véve, 31 350 forint. Ez a különbség a többi magyarázóváltozó hatásaként írható le, amelyből az életkor 957,6 ezer forint különbséget magyaráz a női nem javára, azaz a negatív hatást teljes egészében a munkakörben való különbségek magyarázzák.
+Korábbi kutatások eredményei alapján azt tapasztaltuk, hogy a férfi-női fizetések különbsége általában az életkorral való interakcióval együtt mutat reális képet. Tehát azt mondhatjuk, hogy empirikusan az életkor növekedésével a fizetési különbségek kitágulnak. Ez alapján regressziót futtattunk a teljes modellünkön túl a korábban definiált női nem dummy változója és az életkor interakciójának bevonásával együtt is. Azonban az egyetemi dolgozók mintája alapján ez az interakció nem bizonyult szignifikánsnak.
+
+
+
+```{r}
+teacher_df %>% 
+  total_summarise(g = nem,
+                  `Átlag` = mean(kereset),
+                  `Medián` = median(kereset),
+                  `Szórás` = sd(kereset),
+                  `Relatív szórás` = sd(kereset) / mean(kereset),
+                  `Ferdeség` = moments::skewness(kereset),
+                  `Csúcsosság` = moments::kurtosis(kereset),
+  ) %>% 
+  mutate_at(-1, ~ format(round(., 2), decimal.mark = ",")) %>% 
+  rename(`Munkakör jellege` = 1) %>% 
+  knitr::kable(caption = 
+                 "Fizetések eloszlásának jellemzői nemek szerinti bontásban",
+               align = c("l", rep("c", )))
+```
+
 
 
 ```{r}
@@ -192,72 +350,11 @@ teacher_df %>%
   geom_point(aes(fill = nem), shape = 21, size = 3)
 ```
 
-
-
-```{r}
-
-GGally::ggpairs(teacher_df, ggplot2::aes(colour=iskvegz))
-```
-
-Életkor alapján való eloszlása a tanári fizetéseknek
-
-
-
-Oktatük és ügyintézők kereseti eloszlása
-
-```{r}
-teacher_df %>% 
-  filter(
-    munkakor %in% c("Ügyintéző/titkárnő", "Magasan képzett ügyintéző",
-                    "Egyetemi/főiskolai oktató/tanár")
-  ) %>% 
-  mutate(munkakor_group = ifelse(
-    munkakor == "Egyetemi/főiskolai oktató/tanár", "Oktató", "ügyintéző"
-  )) %>% 
-  group_by(munkakor_group) %>% 
-  mutate(iskvegz_ratio = round(sum(iskvegz == "Egyetem/Msc")/n(), 2),
-         iskvegz_ratio = scales::percent(iskvegz_ratio),
-         mean = mean(kereset)) %>% 
-  ungroup() %>% 
-  ggplot(aes(x = kereset, group = munkakor_group, color = munkakor_group,
-             fill = munkakor_group, alpha = iskvegz_ratio)) +
-  geom_density() +
-  geom_vline(aes(xintercept = mean, color = munkakor_group), linetype = "dashed", size = 0.9) +
-  facet_wrap(~nem)+
-  labs(alpha = "Mesterfokú diplomával rendelkezők aránya")
-```
-
-
-```{r}
-teacher_df %>% 
-  filter(
-    munkakor %in% c("Ügyintéző/titkárnő", "Magasan képzett ügyintéző", "Egyetemi/főiskolai oktató/tanár")
-  ) %>% 
-  mutate(munkakor_group = ifelse(
-    munkakor == "Egyetemi/főiskolai oktató/tanár", "Oktató", "ügyintéző"
-  )) %>% 
-  GGally::ggpairs(aes(color = munkakor_group))
-```
-
-
-
-3. Készítsenek elemzést arról, hogy nem (férfi-nő) szerint a havi átlagos bruttó keresetekben mekkora az átlagos különbség összességében és az egyéb ismérvek hatását kiszűrve, illetve azokkal összekapcsolódva! Használjanak az elemzéshez kétféle módszertant/modellt és hasonlítsák össze a kétféle módszerrel kapott eredmény(eke)t! Írjanak egy összefoglalást is az elemzések tapasztalatairól!
-
-p-score, ols, fa, ..
-
-```{r}
-teacher_df %>% 
-  group_by(nem) %>% 
-  summarise(mean(kereset)) # TODO
-```
-
-
 ```{r}
 teacher_df %>% 
   lm(formula = kereset ~ .-eletkor_group) %>% 
   GGally::ggcoef_model()
 ```
-
 
 ```{r}
 teacher_df %>% 
@@ -272,26 +369,26 @@ teacher_df %>%
 ```
 
 ```{r}
-teacher_df %>% 
+matching_df <- teacher_df %>% 
   group_by(nem, iskvegz, munkakor, eletkor_group) %>% 
   summarise(kereset = mean(kereset), n = n()) %>% 
   pivot_wider(names_from = nem, values_from = c(kereset, n)) %>% 
+  janitor::clean_names() %>% 
   mutate(
-    d = kereset_Férfi - kereset_Nő,
-    n = n_Férfi + n_Nő
-  ) %>% 
-  ungroup() %>% 
-  summarise(ate = weighted.mean(d, n, na.rm = T),
-            atet = weighted.mean(d, n_Férfi, na.rm = TRUE),
-            atet_no = weighted.mean(d, n_Nő, na.rm = TRUE))
+    d = kereset_ferfi - kereset_no,
+    n = n_ferfi + n_no
+  )
 ```
 
+
 ```{r}
-teacher_df %>% 
-  select(- eletkor_group) %>% 
-  rpart::rpart(formula = kereset ~ ., cp = .001) %>% 
-  rpart.plot::rpart.plot()
+matching_df %>% 
+  ungroup() %>% 
+  summarise(ate = weighted.mean(d, n, na.rm = T),
+            atet = weighted.mean(d, n_ferfi, na.rm = TRUE),
+            atet_no = weighted.mean(d, n_no, na.rm = TRUE))
 ```
+
 
 \pagebreak
 
